@@ -31,6 +31,7 @@ Search and install the following packages :
 
  - **DHT sensor library for ESPx** by **beegee_tokyo** (1.18.0)
  - **TFT_eSPI** by **Bodmer** (2.4.79)
+ - **ArduinoJson** by **Benoit Blanchon** (6.19.4)
 
 ## Libraries configuration
 
