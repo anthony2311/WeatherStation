@@ -15,7 +15,7 @@ int dhtPin = 2;
 #include <SPI.h>
 
 #include "Settings.h"
-const String apiUrl = "https://api.meteo-concept.com/api/forecast/daily?world=true";
+const String apiUrl = "https://api.meteo-concept.com/api/forecast/daily?world=true&start=0&end=6";
 TFT_eSPI tft = TFT_eSPI();    
 
 WiFiClientSecure client;
@@ -54,7 +54,7 @@ const char* ca_cert = "-----BEGIN CERTIFICATE-----\n" \
 
 void connectWifi() {
 
-    Serial.println((String)"Connecting to " + (String)"BubbleWifi");
+    Serial.println((String)"Connecting to " + WIFI_SSID);
     WiFi.mode(WIFI_STA); 
 
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -62,7 +62,6 @@ void connectWifi() {
         Serial.print(".");
         delay(100);
     }
-    client.setCACert(ca_cert);
     Serial.println();
 }
 
@@ -83,29 +82,32 @@ void writeTemperatureAndHumidity(){
     tft.println(humidity);
 }
 
-String getRequest(String url) {
-  
-  String payload = "{}"; 
-  HTTPClient https;
+DynamicJsonDocument getWeatherFromApi(String url) {
+  // use https://arduinojson.org/v6/assistant to get doc size
+  DynamicJsonDocument doc(8192);
+  HTTPClient http;
 
-  https.begin(client, url);
-  https.addHeader("Content-Type", "application/json");
-  int httpResponseCode = https.GET();
-  
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+  int httpResponseCode = http.GET();
   
   if (httpResponseCode>0) {
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
-    payload = https.getString();
+    DeserializationError error = deserializeJson(doc, http.getString());
+    if (error) {
+      Serial.print("deserializeJson() failed: ");
+      Serial.println(error.c_str());
+    }
   }
   else {
     Serial.print("Error code: ");
     Serial.println(httpResponseCode);
   }
   // Free resources
-  https.end();
+  http.end();
 
-  return payload;
+  return doc;
 }
 
 /*
@@ -118,6 +120,7 @@ void setup( )
   tft.setRotation(2);
   tft.fillScreen(TFT_BLACK);
   dht.setup(dhtPin, DHTesp::DHT11);
+  client.setCACert(ca_cert);
 }
 /*
  * Main program loop.
@@ -134,8 +137,11 @@ void loop( )
   if(WiFi.status() == WL_CONNECTED){
     String url = apiUrl + "&token=" + METEO_TOKEN + "&latlng=" + METEO_LATITUDE + "," + METEO_LONGITUDE;
     Serial.println(url);
-    String meteo = getRequest(url);
-    Serial.println(meteo);
+    DynamicJsonDocument doc = getWeatherFromApi(url);
+    JsonArray forecastArray = doc["forecast"].as<JsonArray>();
+    for(JsonVariant v : forecastArray) {
+      Serial.println(v["datetime"].as<String>());
+    }
   }
-  delay(1000000);
+  delay(3600000);
 }
