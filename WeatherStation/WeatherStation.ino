@@ -4,6 +4,12 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
+#include <PNGdec.h>
+PNG png; // PNG decoder instance
+#define MAX_IMAGE_WDITH 240 // Adjust for your images
+int16_t xpos = 0;
+int16_t ypos = 0;
+
 /** Initialize DHT sensor */
 DHTesp dht;
 /** Task handle for the light value read task */
@@ -15,6 +21,7 @@ int dhtPin = 2;
 #include <SPI.h>
 
 #include "Settings.h"
+#include "weathericons.h"
 const String apiUrl = "https://api.meteo-concept.com/api/forecast/daily?world=true&start=0&end=6";
 TFT_eSPI tft = TFT_eSPI();    
 
@@ -60,14 +67,14 @@ void connectWifi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while(WiFi.status() != WL_CONNECTED){
         Serial.print(".");
-        delay(100);
+        delay(1000);
     }
     Serial.println();
 }
 
 void writeTemperatureAndHumidity(){   
     tft.setCursor(0, 20);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+    tft.setTextColor(TFT_BLACK, TFT_SKYBLUE); 
     tft.setTextSize(20);
     if (dht.getStatus() != 0) {
       tft.println("temperature sensor error status: " + String(dht.getStatusString()));
@@ -110,6 +117,32 @@ DynamicJsonDocument getWeatherFromApi(String url) {
   return doc;
 }
 
+void pngDraw(PNGDRAW *pDraw) {
+  uint16_t lineBuffer[MAX_IMAGE_WDITH];
+  png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+  tft.pushImage(xpos, ypos + pDraw->y, pDraw->iWidth, 1, lineBuffer);
+}
+
+void drawPng(unsigned char* pngImage, int pngSize,int16_t pngXpos, int16_t pngYpos) {
+  ypos = pngYpos;
+  xpos = pngXpos;
+  int16_t rc = png.openFLASH((uint8_t *)pngImage, pngSize, pngDraw);
+  if (rc == PNG_SUCCESS) {
+    Serial.println("Successfully png file");
+    Serial.printf("image specs: (%d x %d), %d bpp, pixel type: %d\n", png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
+    tft.startWrite();
+    uint32_t dt = millis();
+    rc = png.decode(NULL, 0);
+    Serial.print(millis() - dt); Serial.println("ms");
+    tft.endWrite();
+    // png.close(); // not needed for memory->memory decode
+  }
+  else{
+    Serial.println("Failed png file. Returned code : " + (String)rc);    
+  }
+}
+
+
 /*
  * Initialize the serial port.
  */
@@ -117,8 +150,8 @@ void setup( )
 {
   Serial.begin(115200);
   tft.begin();
-  tft.setRotation(2);
-  tft.fillScreen(TFT_BLACK);
+  tft.setRotation(1);
+  tft.fillScreen(TFT_SKYBLUE);
   dht.setup(dhtPin, DHTesp::DHT11);
   client.setCACert(ca_cert);
 }
@@ -128,7 +161,7 @@ void setup( )
 void loop( )
 {
   // clear screen
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(TFT_SKYBLUE);
   writeTemperatureAndHumidity();
   // connect to WiFi 
   if (WiFi.status() != WL_CONNECTED) {
@@ -139,9 +172,17 @@ void loop( )
     Serial.println(url);
     DynamicJsonDocument doc = getWeatherFromApi(url);
     JsonArray forecastArray = doc["forecast"].as<JsonArray>();
+    int16_t iconpos = 0;
     for(JsonVariant v : forecastArray) {
-      Serial.println(v["datetime"].as<String>());
+      Serial.println(v["weather"].as<int>());
+      drawPng(getWeatherIcon(v["weather"].as<int>()), getWeatherIconSize(v["weather"].as<int>()), iconpos, 60);
+      iconpos = 70 + iconpos;
+      // tft.setCursor(40, 40);
+      // tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+      // tft.setTextSize(20);
+      // tft.pushImage(100, 100, 60, 60, sunIcon);
+      // tft.println("Hello world");
     }
   }
-  delay(3600000);
+  delay(3600000); // 1h
 }
