@@ -1,8 +1,11 @@
+#include <TFT_eSPI.h>
+
 #include <DHTesp.h> 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "time.h"
 
 #include <PNGdec.h>
 PNG png; // PNG decoder instance
@@ -18,11 +21,13 @@ TaskHandle_t tempTaskHandle = NULL;
 int dhtPin = 2;
 
 #include <TFT_eSPI.h> // Hardware-specific library
+int screenVerticalSize = 240;
+int screenHorizontalSize = 320;
 #include <SPI.h>
 
 #include "Settings.h"
 #include "weathericons.h"
-const String apiUrl = "https://api.meteo-concept.com/api/forecast/daily?world=true&start=0&end=6";
+const String apiUrl = "https://api.meteo-concept.com/api/forecast/daily?world=true&start=0&end=3";
 TFT_eSPI tft = TFT_eSPI();    
 
 WiFiClientSecure client;
@@ -59,22 +64,37 @@ const char* ca_cert = "-----BEGIN CERTIFICATE-----\n" \
 "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=\n" \
 "-----END CERTIFICATE-----";
 
+
+void clearScreen(){
+  tft.fillScreen(TFT_BLACK);
+}
+
+void writeCenterMessage(String message){
+  clearScreen();
+  int textSize = 2;
+  tft.setCursor(0, (screenVerticalSize/2)-(textSize*10/2));
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(textSize);
+  tft.println(message);
+}
+
 void connectWifi() {
 
-    Serial.println((String)"Connecting to " + WIFI_SSID);
-    WiFi.mode(WIFI_STA); 
+  writeCenterMessage((String)"Connecting to Wifi : " + WIFI_SSID);
+  WiFi.mode(WIFI_STA); 
 
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    while(WiFi.status() != WL_CONNECTED){
-        Serial.print(".");
-        delay(1000);
-    }
-    Serial.println();
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while(WiFi.status() != WL_CONNECTED){
+      Serial.print(".");
+      delay(1000);
+  }
+  Serial.println();
 }
 
 void writeTemperatureAndHumidity(){   
     tft.setCursor(0, 20);
-    tft.setTextColor(TFT_BLACK, TFT_SKYBLUE); 
+    tft.setTextColor(TFT_WHITE, TFT_BLACK); 
     tft.setTextSize(20);
     if (dht.getStatus() != 0) {
       tft.println("temperature sensor error status: " + String(dht.getStatusString()));
@@ -128,19 +148,52 @@ void drawPng(unsigned char* pngImage, int pngSize,int16_t pngXpos, int16_t pngYp
   xpos = pngXpos;
   int16_t rc = png.openFLASH((uint8_t *)pngImage, pngSize, pngDraw);
   if (rc == PNG_SUCCESS) {
-    Serial.println("Successfully png file");
-    Serial.printf("image specs: (%d x %d), %d bpp, pixel type: %d\n", png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
     tft.startWrite();
     uint32_t dt = millis();
     rc = png.decode(NULL, 0);
-    Serial.print(millis() - dt); Serial.println("ms");
     tft.endWrite();
-    // png.close(); // not needed for memory->memory decode
   }
   else{
     Serial.println("Failed png file. Returned code : " + (String)rc);    
   }
 }
+
+const char * months[] = { 
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
+    "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+};
+const char * days[] = {
+    "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"
+};
+
+String formatDate(const char* datetime, int nameLength = 10){
+  struct tm ts = {0};
+  strptime(datetime,"%Y-%m-%dT%H%M%S%Z",&ts);
+  mktime(&ts);
+  return String(days[ts.tm_wday]).substring(0, nameLength) + " " +  String(ts.tm_mday) + " " +  String(months[ts.tm_mon]).substring(0, nameLength);
+}
+
+void drawForecast(JsonVariant forecast, int16_t iconpos){
+  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), iconpos, 130);
+  Serial.println(formatDate(forecast["datetime"].as<const char*>(), 3));
+  tft.setCursor(iconpos, 120);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(1);
+  tft.println(formatDate(forecast["datetime"].as<const char*>(), 3));
+}
+
+void drawTodayWeather(JsonVariant forecast){
+  
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(2);
+  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), 0, 60);
+  Serial.println(formatDate(forecast["datetime"].as<const char*>()));
+  tft.setCursor(0, 5);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(2);
+  tft.println(formatDate(forecast["datetime"].as<const char*>(), 3));
+}
+
 
 
 /*
@@ -151,7 +204,7 @@ void setup( )
   Serial.begin(115200);
   tft.begin();
   tft.setRotation(1);
-  tft.fillScreen(TFT_SKYBLUE);
+  clearScreen();
   dht.setup(dhtPin, DHTesp::DHT11);
   client.setCACert(ca_cert);
 }
@@ -160,9 +213,8 @@ void setup( )
  */
 void loop( )
 {
-  // clear screen
-  tft.fillScreen(TFT_SKYBLUE);
-  writeTemperatureAndHumidity();
+  clearScreen();
+  // writeTemperatureAndHumidity();
   // connect to WiFi 
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
@@ -172,16 +224,15 @@ void loop( )
     Serial.println(url);
     DynamicJsonDocument doc = getWeatherFromApi(url);
     JsonArray forecastArray = doc["forecast"].as<JsonArray>();
-    int16_t iconpos = 0;
-    for(JsonVariant v : forecastArray) {
-      Serial.println(v["weather"].as<int>());
-      drawPng(getWeatherIcon(v["weather"].as<int>()), getWeatherIconSize(v["weather"].as<int>()), iconpos, 60);
-      iconpos = 70 + iconpos;
-      // tft.setCursor(40, 40);
-      // tft.setTextColor(TFT_WHITE, TFT_BLACK); 
-      // tft.setTextSize(20);
-      // tft.pushImage(100, 100, 60, 60, sunIcon);
-      // tft.println("Hello world");
+    clearScreen();
+    for(int i = 0; i < forecastArray.size(); i++) {
+      JsonVariant forecast = forecastArray[i];
+      if(i == 0){
+        drawTodayWeather(forecast);
+      }
+      else{
+        drawForecast(forecast, 120*(i-1));
+      }
     }
   }
   delay(3600000); // 1h
