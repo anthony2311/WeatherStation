@@ -173,28 +173,31 @@ String formatDate(const char* datetime, int nameLength = 10){
   return String(days[ts.tm_wday]).substring(0, nameLength) + " " +  String(ts.tm_mday) + " " +  String(months[ts.tm_mon]).substring(0, nameLength);
 }
 
+void drawTodayWeather(JsonVariant forecast){
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(2);
+  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), 5, 30);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
+  tft.setTextSize(2);
+  tft.setCursor(5, 5);
+  tft.println(formatDate(forecast["datetime"].as<const char*>()));
+  tft.setCursor(70, 25);
+  tft.println("Temp: " + forecast["tmin"].as<String>() + "/" + forecast["tmax"].as<String>() + "\367C");
+  tft.setCursor(70, 50);
+  tft.println("Vent: " + forecast["wind10m"].as<String>() + "km/h");
+}
+
 void drawForecast(JsonVariant forecast, int16_t iconpos){
   drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), iconpos, 130);
-  Serial.println(formatDate(forecast["datetime"].as<const char*>(), 3));
-  tft.setCursor(iconpos, 120);
   tft.setTextColor(TFT_WHITE, TFT_BLACK); 
   tft.setTextSize(1);
+  tft.setCursor(iconpos, 120);
   tft.println(formatDate(forecast["datetime"].as<const char*>(), 3));
+  tft.setCursor(iconpos, 195);
+  tft.println("Temp: " + forecast["tmin"].as<String>() + "/" + forecast["tmax"].as<String>() + "\367C");  
+  tft.setCursor(iconpos, 210);
+  tft.println("Vent: " + forecast["wind10m"].as<String>() + "km/h");
 }
-
-void drawTodayWeather(JsonVariant forecast){
-  
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
-  tft.setTextSize(2);
-  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), 0, 60);
-  Serial.println(formatDate(forecast["datetime"].as<const char*>()));
-  tft.setCursor(0, 5);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); 
-  tft.setTextSize(2);
-  tft.println(formatDate(forecast["datetime"].as<const char*>(), 3));
-}
-
-
 
 /*
  * Initialize the serial port.
