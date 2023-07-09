@@ -19,6 +19,8 @@ DHTesp dht;
 TaskHandle_t tempTaskHandle = NULL;
 /** Pin number for DHT11 data pin */
 int dhtPin = 2;
+float humidity;
+float temperature;
 
 #include <TFT_eSPI.h> // Hardware-specific library
 int screenVerticalSize = 240;
@@ -81,9 +83,9 @@ void writeCenterMessage(String message){
 void connectWifi() {
 
   writeCenterMessage((String)"Connecting to Wifi : " + WIFI_SSID);
+  WiFi.disconnect(true);
   WiFi.mode(WIFI_STA); 
 
-  WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while(WiFi.status() != WL_CONNECTED){
       Serial.print(".");
@@ -92,21 +94,17 @@ void connectWifi() {
   Serial.println();
 }
 
-void writeTemperatureAndHumidity(){   
-    tft.setCursor(0, 20);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK); 
-    tft.setTextSize(20);
-    if (dht.getStatus() != 0) {
-      tft.println("temperature sensor error status: " + String(dht.getStatusString()));
-      return;
-    }
-  /* Measure temperature and humidity.  If the functions returns
-     true, then a measurement is available. */
-    TempAndHumidity lastValues = dht.getTempAndHumidity();
-    String temperature = String(lastValues.temperature,0)+"C";
-    String humidity = String(lastValues.humidity,0) + "%";
-    tft.println(temperature);
-    tft.println(humidity);
+void updateTemperatureAndHumidity(){   
+  temperature = NAN;
+  humidity = NAN;
+  TempAndHumidity newValues = dht.getTempAndHumidity();
+	// Check if any reads failed and exit early (to try again).
+	if (dht.getStatus() != 0) {
+		Serial.println("DHT11 error status: " + String(dht.getStatusString()));
+		return;
+	}
+  temperature = newValues.temperature;
+  humidity = newValues.humidity;
 }
 
 DynamicJsonDocument getWeatherFromApi(String url) {
@@ -188,15 +186,26 @@ void drawTodayWeather(JsonVariant forecast){
 }
 
 void drawForecast(JsonVariant forecast, int16_t iconpos){
-  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), iconpos, 130);
+  drawPng(getWeatherIcon(forecast["weather"].as<int>()), getWeatherIconSize(forecast["weather"].as<int>()), iconpos, 140);
   tft.setTextColor(TFT_WHITE, TFT_BLACK); 
   tft.setTextSize(1);
-  tft.setCursor(iconpos, 120);
+  tft.setCursor(iconpos, 130);
   tft.println(formatDate(forecast["datetime"].as<const char*>(), 3));
-  tft.setCursor(iconpos, 195);
-  tft.println("Temp: " + forecast["tmin"].as<String>() + "/" + forecast["tmax"].as<String>() + "\367C");  
-  tft.setCursor(iconpos, 210);
+  tft.setCursor(iconpos, 205);
+  tft.println("Temp: " + forecast["tmin"].as<String>() + "/" + forecast["tmax"].as<String>() + "\367C");
+  tft.setCursor(iconpos, 220);
   tft.println("Vent: " + forecast["wind10m"].as<String>() + "km/h");
+}
+
+void drawCurrentTempAndHum(){
+  updateTemperatureAndHumidity();
+  if (!isnan(temperature) && !isnan(humidity)) {
+    tft.setTextSize(2);
+    tft.setCursor(70, 75);
+    tft.println("Temp actuel: "+String((int)temperature)+"\367C");
+    tft.setCursor(70, 100);
+    tft.println("Humi actuel: "+String((int)humidity)+"%");
+  }
 }
 
 /*
@@ -217,7 +226,6 @@ void setup( )
 void loop( )
 {
   clearScreen();
-  // writeTemperatureAndHumidity();
   // connect to WiFi 
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
@@ -238,5 +246,10 @@ void loop( )
       }
     }
   }
-  delay(3600000); // 1h
+  int refreshTimeWeather = 3600000; // 1h
+  int refreshTempAndHumidity = 300000; // 5min
+  for(int i = 0; refreshTimeWeather > (refreshTempAndHumidity*i); i++) {
+    drawCurrentTempAndHum();
+    delay(refreshTempAndHumidity);
+  }
 }
